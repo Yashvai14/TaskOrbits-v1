@@ -1,0 +1,144 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                  String   @id @default(uuid())
+  email               String   @unique
+  name                String?
+  passwordHash        String?
+  authProvider        String   @default("email")
+  onboardingCompleted Boolean  @default(false)
+  createdAt           DateTime @default(now())
+
+  ownedOrgs   Organization[]
+  memberships OrganizationMember[]
+  teamMembers TeamMember[]
+  tasks       Task[]         @relation("AssignedTasks")
+  aiLogs      AiLog[]
+}
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  logoUrl   String?
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  members     OrganizationMember[]
+  teams       Team[]
+  projects    Project[]
+  invitations Invitation[]
+}
+
+model OrganizationMember {
+  id             String       @id @default(uuid())
+  userId         String
+  organizationId String
+  role           String
+  user           User         @relation(fields: [userId], references: [id])
+  organization   Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([userId, organizationId])
+}
+
+model Team {
+  id             String       @id @default(uuid())
+  name           String
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime     @default(now())
+
+  members  TeamMember[]
+  tasks    Task[]
+  projects Project[]
+}
+
+model TeamMember {
+  id     String @id @default(uuid())
+  teamId String
+  userId String
+  role   String @default("member")
+  team   Team   @relation(fields: [teamId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([teamId, userId])
+}
+
+model DashboardPreference {
+  id               String  @id @default(uuid())
+  userId           String  @unique
+  kanbanEnabled    Boolean @default(true)
+  calendarEnabled  Boolean @default(false)
+  timelineEnabled  Boolean @default(false)
+  dailyPlanner     Boolean @default(false)
+  aiPanel          Boolean @default(false)
+  analyticsEnabled Boolean @default(false)
+}
+
+model Project {
+  id             String       @id @default(uuid())
+  name           String
+  description    String?
+  organizationId String
+  teamId         String?
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  team           Team?        @relation(fields: [teamId], references: [id])
+  createdAt      DateTime     @default(now())
+
+  tasks Task[]
+}
+
+model Task {
+  id          String    @id @default(uuid())
+  title       String
+  description String?
+  status      String    @default("todo")
+  priority    String    @default("medium")
+  assignedTo  String?
+  assignee    User?     @relation("AssignedTasks", fields: [assignedTo], references: [id])
+  projectId   String?
+  project     Project?  @relation(fields: [projectId], references: [id])
+  teamId      String?
+  team        Team?     @relation(fields: [teamId], references: [id])
+  dueDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  comments TaskComment[]
+}
+
+model TaskComment {
+  id        String   @id @default(uuid())
+  taskId    String
+  userId    String
+  content   String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+}
+
+model Invitation {
+  id             String       @id @default(uuid())
+  email          String
+  organizationId String
+  teamId         String?
+  invitedBy      String?
+  status         String       @default("pending")
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime     @default(now())
+}
+
+model AiLog {
+  id        String   @id @default(uuid())
+  userId    String
+  prompt    String
+  response  String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+}

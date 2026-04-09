@@ -1,10 +1,33 @@
 'use client'
-import { Home, Calendar, Users, Settings, PieChart, Activity } from 'lucide-react'
+import { Home, Calendar, Users, Settings, PieChart, Activity, Bot } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useState, useEffect } from 'react'
 
 export function Sidebar() {
   const pathname = usePathname()
+  const [pendingCount, setPendingCount] = useState(0)
+
+  useEffect(() => {
+    const fetchPendingCount = async () => {
+      try {
+        const token = localStorage.getItem("token") || "mock-token";
+        const res = await fetch("/api/tasks/pending-review", {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        if (res.ok) {
+          const data = await res.json();
+          setPendingCount(data.tasks?.length || 0);
+        }
+      } catch (e) {
+        console.error(e)
+      }
+    };
+    
+    fetchPendingCount();
+    const interval = setInterval(fetchPendingCount, 15000); // Check every 15s
+    return () => clearInterval(interval);
+  }, []);
 
   const links = [
     { label: 'Dashboard', icon: Home, href: '/dashboard' },
@@ -12,6 +35,7 @@ export function Sidebar() {
     { label: 'Calendar', icon: Calendar, href: '/dashboard/calendar' },
     { label: 'Analytics', icon: PieChart, href: '/dashboard/analytics' },
     { label: 'Team', icon: Users, href: '/dashboard/team' },
+    { label: 'AI Review', icon: Bot, href: '/dashboard/ai-review' },
     { label: 'Settings', icon: Settings, href: '/dashboard/settings' },
   ]
 
@@ -25,9 +49,16 @@ export function Sidebar() {
           const Icon = link.icon
           const active = pathname === link.href || pathname?.startsWith(link.href + '/')
           return (
-            <Link key={link.label} href={link.href} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${active ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}> 
-              <Icon size={18} />
-              {link.label}
+            <Link key={link.label} href={link.href} className={`flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${active ? 'bg-indigo-50 text-indigo-700' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'}`}> 
+              <div className="flex items-center gap-3">
+                <Icon size={18} />
+                {link.label}
+              </div>
+              {link.label === 'AI Review' && pendingCount > 0 && (
+                <span className="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full shadow-sm animate-pulse">
+                  {pendingCount}
+                </span>
+              )}
             </Link>
           )
         })}

@@ -41,3 +41,27 @@ yarn-error.log*
 next-env.d.ts
 
 /app/generated/prisma
+
+# Python / Backend
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+.env/
+backend/venv/
+backend/__pycache__/
+credentials.json
+token.json
+*.log
+
+# Database mock files
+dbdump.json
+prisma_out.txt
+build_err.txt
+
+# OS/IDE
+.vscode/
+.idea/
+*.swp

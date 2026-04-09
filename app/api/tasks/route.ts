@@ -15,12 +15,29 @@ export async function GET() {
 
   const tasks = await prisma.task.findMany({
     where: {
-      OR: [
-        { assignedTo: user.id },
-        ...(teamId ? [{ teamId }] : [])
+      AND: [
+        {
+          OR: [
+            { assignedTo: user.id },
+            ...(teamId ? [{ teamId }] : [])
+          ]
+        },
+        {
+          extractionStatus: {
+            not: 'pending-review'
+          }
+        },
+        {
+          status: {
+            notIn: ['pending', 'cancelled']
+          }
+        }
       ]
     },
     orderBy: { createdAt: 'desc' },
+    include: {
+      assignee: { select: { name: true, email: true } }
+    }
   })
 
   return NextResponse.json(tasks)

@@ -14,6 +14,8 @@ model User {
   passwordHash        String?
   authProvider        String   @default("email")
   onboardingCompleted Boolean  @default(false)
+  slackId             String?  @unique
+  telegramId          String?  @unique
   createdAt           DateTime @default(now())
 
   ownedOrgs   Organization[]
@@ -111,7 +113,15 @@ model Task {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  comments TaskComment[]
+  // AI Extraction properties
+  sourceType        String?  // 'gmail', 'slack', 'telegram', 'manual'
+  sourceId          String?  // The original ID of the message/email
+  originalMessage   String?  @db.Text
+  confidenceScore   Float?   // 0.0 to 100.0
+  extractionStatus  String?  // 'auto-created', 'pending-review', 'rejected', 'human-approved'
+
+  comments      TaskComment[]
+  taskFeedbacks TaskFeedback[]
 }
 
 model TaskComment {
@@ -141,4 +151,15 @@ model AiLog {
   response  String
   user      User     @relation(fields: [userId], references: [id])
   createdAt DateTime @default(now())
+}
+
+model TaskFeedback {
+  id          String   @id @default(uuid())
+  taskId      String
+  userId      String
+  correction  String   @db.Text
+  originalAi  String   @db.Text
+  createdAt   DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
 }

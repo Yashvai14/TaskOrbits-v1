@@ -66,6 +66,7 @@ export default function DashboardPage() {
                   tasks={tasks} 
                   onTaskUpdated={handleTaskUpdated} 
                   onTaskDeleted={handleTaskDeleted}
+                  currentUser={user}
                 />
               </div>
               <div className="w-full lg:w-80 xl:w-96 shrink-0 space-y-8">

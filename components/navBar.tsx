@@ -13,6 +13,7 @@ const navBar = () => {
           width={197}
           height={65}
           className="cursor-pointer"
+          style={{ height: 'auto' }}
         />
       </Link>
             <ul className='flex space-x-4 font-semibold text-gray-800'>

@@ -1,6 +1,28 @@
-import { Bell, Search, Zap } from 'lucide-react'
+import { Bell, Search, Zap, Loader2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
 
 export function Header({ user }: { user?: { name?: string, email?: string, orgName?: string } }) {
+  const [insight, setInsight] = useState<string | null>(null)
+  const [loadingInsight, setLoadingInsight] = useState(true)
+
+  useEffect(() => {
+    if (!user) return
+    const fetchInsight = async () => {
+      try {
+        const res = await fetch('/api/ai/insight')
+        if (res.ok) {
+          const data = await res.json()
+          setInsight(data.insight)
+        }
+      } catch (e) {
+        console.error("Failed to fetch AI insight:", e)
+      } finally {
+        setLoadingInsight(false)
+      }
+    }
+    fetchInsight()
+  }, [user])
+
   return (
     <header className="flex flex-col border-b border-gray-100 bg-white/50 backdrop-blur-md sticky top-0 z-30 shrink-0">
       <div className="h-16 px-8 flex items-center justify-between">
@@ -25,8 +47,13 @@ export function Header({ user }: { user?: { name?: string, email?: string, orgNa
         <div className="bg-white p-1.5 rounded-lg shadow-sm">
           <Zap size={16} className="text-purple-600" fill="currentColor" />
         </div>
-        <p className="text-sm font-medium text-gray-700">
-          <span className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-indigo-600">AI Insight:</span> You have 3 high-priority tasks due today. Consider tackling 'Design System' first to stay on track.
+        <p className="text-sm font-medium text-gray-700 flex items-center gap-2 flex-1 w-full min-w-0">
+          <span className="font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-indigo-600 whitespace-nowrap">AI Insight:</span>
+          {loadingInsight ? (
+            <span className="h-4 bg-purple-200/50 rounded animate-pulse w-1/3"></span>
+          ) : (
+            <span className="truncate">{insight || "Stay focused and keep clearing those tasks!"}</span>
+          )}
         </p>
       </div>
     </header>

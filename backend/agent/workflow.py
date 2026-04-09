@@ -47,7 +47,8 @@ class GraphState(TypedDict):
     decision: str  # 'auto-created', 'pending-review', 'rejected', 'discarded'
 
 # LLM Setup - Using phi3 due to VRAM constraints
-llm = OllamaLLM(model="phi3", format="json") # forcing json format
+llm = OllamaLLM(model="phi3", format="json") # forcing json format for agent extractions
+chat_llm = OllamaLLM(model="phi3") # regular text LLM for natural language queries and insights
 
 def validation_node(state: GraphState) -> GraphState:
     prompt = VALIDATION_PROMPT.format(message=state['source_message'])

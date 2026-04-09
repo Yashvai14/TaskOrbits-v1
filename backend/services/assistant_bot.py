@@ -8,7 +8,7 @@ import threading
 import requests
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
-from agent.workflow import llm
+from agent.workflow import chat_llm
 
 # ── Config ──────────────────────────────────────────────────────────────────
 ASSISTANT_BOT_TOKEN = os.getenv("TELEGRAM_ASSISTANT_BOT_TOKEN")
@@ -22,6 +22,10 @@ _rate_limits: dict[str, list[float]] = defaultdict(list)   # chat_id => timestam
 _notified_deadlines: set[str] = set()   # task IDs already sent 24hr warning
 _notified_urgent: set[str] = set()      # task IDs already sent <30min warning
 _notified_overdue: set[str] = set()     # task IDs already sent overdue alert
+
+# Periodic updates state
+_user_frequencies: dict[str, int] = {}  # chat_id => minutes
+_last_update_sent: dict[str, float] = {} # chat_id => timestamp
 
 RATE_LIMIT = 30   # max messages per minute per user
 
@@ -133,6 +137,7 @@ def cmd_help(chat_id: str):
         "/overdue — Tasks past their deadline\n"
         "/done &lt;task_id&gt; — Mark a task as complete\n"
         "/task &lt;task_id&gt; — Full details of a task\n"
+        "/frequency &lt;mins&gt; — Set periodic digest interval (e.g. 10)\n"
         "/help — This message\n\n"
         "<b>Natural Language</b>\n"
         "Just type anything! E.g.:\n"
@@ -253,6 +258,18 @@ def cmd_task(chat_id: str, user: dict, args: str):
         f"🔗 <a href='{APP_URL}/dashboard'>Open in Dashboard</a>"
     ))
 
+def cmd_frequency(chat_id: str, args: str):
+    if not args.strip().isdigit():
+        send(chat_id, "❓ Usage: /frequency &lt;minutes&gt;\nExample: /frequency 10")
+        return
+    mins = int(args.strip())
+    if mins < 1:
+        send(chat_id, "❌ Frequency must be at least 1 minute.")
+        return
+    _user_frequencies[chat_id] = mins
+    _last_update_sent[chat_id] = time.time() # Reset timer
+    send(chat_id, f"✅ Done! I will now send you a task digest every <b>{mins} minutes</b>.")
+
 # ── Natural Language Query ────────────────────────────────────────────────────
 def handle_nl_query(chat_id: str, user: dict, text: str):
     tasks = get_tasks_for_user(user["id"])
@@ -285,8 +302,9 @@ User's question: {text}
 Respond directly and helpfully:"""
 
         try:
-            reply = llm.invoke(prompt)
-            send(chat_id, str(reply)[:2000])
+            reply = chat_llm.invoke(prompt)
+            clean_reply = str(reply.content) if hasattr(reply, 'content') else str(reply)
+            send(chat_id, clean_reply[:2000].replace('"', ''))
         except Exception as e:
             print(f"[TG] NL query LLM error: {e}")
             send(chat_id, "🤔 I couldn't process that right now. Try /mytasks or /deadlines!")
@@ -345,6 +363,11 @@ def handle_message(chat_id: str, text: str):
         cmd_task(chat_id, user, text[5:])
         return
 
+    # /frequency <mins>
+    if lower.startswith("/frequency"):
+        cmd_frequency(chat_id, text[10:])
+        return
+
     # Natural language fallback
     handle_nl_query(chat_id, user, text)
 
@@ -373,6 +396,41 @@ def send_morning_briefing():
             msg += "✅ Nothing due today — have a great day!\n"
         msg += f"\n🔗 <a href='{APP_URL}/dashboard'>Open Dashboard</a>"
         send(str(chat_id), msg)
+
+def send_periodic_updates():
+    """Runs every minute — sends periodic updates based on user frequency preference."""
+    now = time.time()
+    for user in get_all_users_with_telegram():
+        chat_id = str(user.get("telegramId", ""))
+        user_id = user.get("id")
+        if not chat_id or not user_id:
+            continue
+        
+        freq = _user_frequencies.get(chat_id, 10) # default to 10 minutes
+        last_sent = _last_update_sent.get(chat_id, now)
+        
+        # If this is their first time being checked, initialize their timer
+        if chat_id not in _last_update_sent:
+            _last_update_sent[chat_id] = now
+            continue
+            
+        elapsed_mins = (now - last_sent) / 60.0
+        
+        if elapsed_mins >= freq:
+            tasks = get_tasks_for_user(user_id)
+            active = [t for t in tasks if t.get("status") not in ["done", "cancelled"]]
+            overdue = [t for t in active if t.get("dueDate") and datetime.fromisoformat(t["dueDate"].replace("Z","+00:00")) < datetime.now(timezone.utc)]
+            
+            msg = f"🔄 <b>Periodic Update (Every {freq}m)</b>\n\n"
+            msg += f"📊 You currently have <b>{len(active)} active task(s)</b>.\n"
+            if len(overdue) > 0:
+                msg += f"🚨 <b>{len(overdue)} are OVERDUE!</b>\n"
+                for t in overdue[:2]:
+                    msg += f"  • {t.get('title')}\n"
+            
+            msg += f"\n<i>(Change frequency with /frequency &lt;mins&gt;)</i>"
+            send(chat_id, msg)
+            _last_update_sent[chat_id] = now
 
 def send_deadline_reminders():
     """Runs every hour — sends 24hr warnings for upcoming deadlines."""

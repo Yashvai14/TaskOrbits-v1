@@ -12,7 +12,7 @@ from services.taskorbits_client import push_task_to_nextjs
 from services.telegram_service import poll_telegram
 from services.slack_service import poll_slack
 from services.gmail_service import poll_gmail
-from services.assistant_bot import poll_assistant_bot, send_morning_briefing, send_deadline_reminders, send_urgent_reminders, clear_webhook
+from services.assistant_bot import poll_assistant_bot, send_morning_briefing, send_deadline_reminders, send_urgent_reminders, send_periodic_updates, clear_webhook, get_tasks_for_user
 
 def check_system_configs():
     telegram_ok = os.getenv("TELEGRAM_BOT_TOKEN") and os.getenv("TELEGRAM_BOT_TOKEN") != "YOUR_TELEGRAM_BOT_TOKEN"
@@ -66,11 +66,13 @@ def startup_event():
     scheduler.add_job(send_morning_briefing,  'cron', hour=9, minute=0, max_instances=1, coalesce=True)
     scheduler.add_job(send_deadline_reminders,'interval', hours=1,    max_instances=1, coalesce=True)  # 24hr warnings
     scheduler.add_job(send_urgent_reminders,  'interval', seconds=60, max_instances=1, coalesce=True)  # <30min warnings
+    scheduler.add_job(send_periodic_updates,  'interval', seconds=60, max_instances=1, coalesce=True)  # customizable freq digest
     scheduler.start()
     print("APScheduler started.")
     print("  Task bots       : every 30s")
     print("  Assistant bot   : every 10s (up to 3 concurrent)")
     print("  Urgent reminders: every 60s (tasks due <30 min or just overdue)")
+    print("  Periodic update : every 60s (checks user frequency preference)")
     print("  Daily briefing  : 9:00 AM")
     print("  Deadline check  : hourly (24hr window)")
 
@@ -99,3 +101,48 @@ async def ingest_webhook(
 @app.get("/health")
 def health_check():
     return {"status": "ok", "service": "taskorbits-ai"}
+
+from agent.workflow import chat_llm
+
+@app.get("/api/ai/insight/{user_id}")
+async def get_ai_insight(user_id: str, authorization: str = Header(None)):
+    internal_secret = os.getenv("INTERNAL_API_SECRET", "super-secret-key-123")
+    if not authorization or authorization != f"Bearer {internal_secret}":
+        raise HTTPException(status_code=401, detail="Unauthorized")
+        
+    tasks = get_tasks_for_user(user_id)
+    if not tasks:
+        return {"insight": "You have no active tasks at the moment. Time to plan ahead!"}
+        
+    # Build prompt
+    active = [t for t in tasks if t.get('status') not in ['done', 'cancelled']]
+    if not active:
+        return {"insight": "All caught up! Excellent work clearing your board."}
+
+    task_rows = []
+    for t in active[:15]:  # Focus on top 15 active
+        task_rows.append(
+            f"- Title:'{t.get('title')}' | Status:{t.get('status')} "
+            f"| Priority:{t.get('priority')} | Due:{t.get('dueDate','none')}"
+        )
+    
+    prompt = f"""You are a helpful AI assistant for TaskOrbits.
+The user has the following active tasks:
+{chr(10).join(task_rows)}
+
+Based ONLY on this data, write EXACTLY ONE sentence with an actionable recommendation.
+Example formats:
+You have 2 high-priority tasks due today, consider finishing 'Design System' first.
+Since 'Database Migration' is overdue, make it your top priority now.
+
+Do not use quotes, emojis, or markdown. Be concise and practical.
+Insight: """
+
+    try:
+        reply = chat_llm.invoke(prompt)
+        insight_text = str(reply.content) if hasattr(reply, 'content') else str(reply)
+        insight_clean = insight_text.replace("Insight:", "").strip(' "\'\n\\{\\}[]*:')
+        return {"insight": insight_clean}
+    except Exception as e:
+        print(f"Insight LLM error: {e}")
+        return {"insight": "Stay focused! Keep tackling your highest priority items today."}
